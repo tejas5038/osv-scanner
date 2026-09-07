@@ -38,12 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL \
-            -H "Authorization: Bearer ${OIDC_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            -d '{"action":"next_task"}' \
-            https://qhuyoffntxpylelzgbsx.supabase.co/functions/v1/oss-agent-github-worker \
-            > /tmp/response.json
+          curl -fsSL -H "Authorization: Bearer ${OIDC_TOKEN}" -H 'Content-Type: application/json' -d '{"action":"next_task"}' https://qhuyoffntxpylelzgbsx.supabase.co/functions/v1/oss-agent-github-worker > /tmp/response.json
           id=$(jq -r '.task.id // empty' /tmp/response.json)
           if [ -z "$id" ]; then
             echo 'has_task=false' >> "$GITHUB_OUTPUT"
@@ -86,15 +81,7 @@ jobs:
           for ((i=0;i<n;i++)); do
             jq -c ".edits[$i]" /tmp/task.json > /tmp/edit.json
             p=$(jq -r '.path' /tmp/edit.json)
-            python3 - "$p" /tmp/edit.json <<'PY'
-import json, pathlib, sys
-p = pathlib.Path(sys.argv[1])
-e = json.load(open(sys.argv[2]))
-s = p.read_text()
-if s.count(e['old']) != 1:
-    raise SystemExit('exact edit match count != 1')
-p.write_text(s.replace(e['old'], e['new'], 1))
-PY
+            python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); e=json.load(open(sys.argv[2])); s=p.read_text(); c=s.count(e["old"]); assert c==1, f"exact edit match count != 1 ({c})"; p.write_text(s.replace(e["old"],e["new"],1))' "$p" /tmp/edit.json
           done
 
           git diff --check
@@ -120,16 +107,8 @@ PY
           OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         shell: bash
         run: |
-          jq -n \
-            --argjson task_id '${{ steps.task.outputs.task_id }}' \
-            --arg sha '${{ steps.exec.outputs.sha }}' \
-            --arg branch '${{ steps.exec.outputs.branch }}' \
-            '{action:"report",status:"completed",task_id:$task_id,result:{sha:$sha,branch:$branch}}' > /tmp/report.json
-          curl -fsSL \
-            -H "Authorization: Bearer ${OIDC_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/report.json \
-            https://qhuyoffntxpylelzgbsx.supabase.co/functions/v1/oss-agent-github-worker
+          jq -n --argjson task_id '${{ steps.task.outputs.task_id }}' --arg sha '${{ steps.exec.outputs.sha }}' --arg branch '${{ steps.exec.outputs.branch }}' '{action:"report",status:"completed",task_id:$task_id,result:{sha:$sha,branch:$branch}}' > /tmp/report.json
+          curl -fsSL -H "Authorization: Bearer ${OIDC_TOKEN}" -H 'Content-Type: application/json' --data-binary @/tmp/report.json https://qhuyoffntxpylelzgbsx.supabase.co/functions/v1/oss-agent-github-worker
 
       - name: Report failure
         if: steps.task.outputs.has_task == 'true' && failure()
@@ -137,11 +116,5 @@ PY
           OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         shell: bash
         run: |
-          jq -n \
-            --argjson task_id '${{ steps.task.outputs.task_id }}' \
-            '{action:"report",status:"failed",task_id:$task_id,error:"GitHub Actions worker failed; inspect workflow logs."}' > /tmp/report.json
-          curl -fsSL \
-            -H "Authorization: Bearer ${OIDC_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/report.json \
-            https://qhuyoffntxpylelzgbsx.supabase.co/functions/v1/oss-agent-github-worker || true
+          jq -n --argjson task_id '${{ steps.task.outputs.task_id }}' '{action:"report",status:"failed",task_id:$task_id,error:"GitHub Actions worker failed; inspect workflow logs."}' > /tmp/report.json
+          curl -fsSL -H "Authorization: Bearer ${OIDC_TOKEN}" -H 'Content-Type: application/json' --data-binary @/tmp/report.json https://qhuyoffntxpylelzgbsx.supabase.co/functions/v1/oss-agent-github-worker || true
